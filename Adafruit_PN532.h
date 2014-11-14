@@ -79,7 +79,12 @@
 #define PN532_SPI_DATAREAD                  (0x03)
 #define PN532_SPI_READY                     (0x01)
 
-#define PN532_MIFARE_ISO14443A              (0x00)
+enum BaudRateType
+{
+  PN532_MIFARE_ISO14443A = 0x00,
+  PN532_FELICA_SLOW = 0x01,
+  PN532_FELICA_FAST = 0x02
+};
 
 // Mifare Commands
 #define MIFARE_CMD_AUTH_A                   (0x60)
@@ -151,7 +156,7 @@ class Adafruit_PN532{
   boolean setPassiveActivationRetries(uint8_t maxRetries);
   
   // ISO14443A functions
-  boolean readPassiveTargetID(uint8_t cardbaudrate, uint8_t * uid, uint8_t * uidLength);
+  boolean readPassiveTargetID(BaudRateType cardbaudrate, uint8_t * uid, uint8_t * uidLength);
   
   // Mifare Classic functions
   bool mifareclassic_IsFirstBlock (uint32_t uiBlock);

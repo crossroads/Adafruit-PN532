@@ -39,6 +39,7 @@
              uint8_t mifareultralight_ReadPage (uint8_t page, uint8_t * buffer)	
 */
 /**************************************************************************/
+// #define MIFAREDEBUG
 #if ARDUINO >= 100
  #include "Arduino.h"
 #else
@@ -46,6 +47,8 @@
 #endif
 
 #include "Adafruit_PN532.h"
+
+#define _BV(bit) (1 << (bit))
 
 byte pn532ack[] = {0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00};
 byte pn532response_firmwarevers[] = {0x00, 0xFF, 0x06, 0xFA, 0xD5, 0x03};
@@ -414,54 +417,87 @@ boolean Adafruit_PN532::setPassiveActivationRetries(uint8_t maxRetries) {
     @returns 1 if everything executed properly, 0 for an error
 */
 /**************************************************************************/
-boolean Adafruit_PN532::readPassiveTargetID(uint8_t cardbaudrate, uint8_t * uid, uint8_t * uidLength) {
+boolean Adafruit_PN532::readPassiveTargetID(BaudRateType cardbaudrate, uint8_t * uid, uint8_t * uidLength) {
+  // Changed just to handle FELICA, not too hard to add back MIFARE
+  switch (cardbaudrate)
+  {
+    case PN532_MIFARE_ISO14443A:
+      return 0;
+    case PN532_FELICA_SLOW:
+    case PN532_FELICA_FAST:
+      break;
+  }
+
   pn532_packetbuffer[0] = PN532_COMMAND_INLISTPASSIVETARGET;
   pn532_packetbuffer[1] = 1;  // max 1 cards at once (we can set this to 2 later)
-  pn532_packetbuffer[2] = cardbaudrate;
+  pn532_packetbuffer[2] = static_cast<int>(cardbaudrate);
+  pn532_packetbuffer[3] = 0x0;
+  pn532_packetbuffer[4] = 0xFF;
+  pn532_packetbuffer[5] = 0xFF;
+  pn532_packetbuffer[6] = 0x0;
+  pn532_packetbuffer[7] = 0x0; // time slot
   
-  if (! sendCommandCheckAck(pn532_packetbuffer, 3))
+  if (! sendCommandCheckAck(pn532_packetbuffer, 8))
     return 0x0;  // no cards read
   
   // read data packet
-  readspidata(pn532_packetbuffer, 20);
+  readspidata(pn532_packetbuffer, 24);
   // check some basic stuff
 
-  /* ISO14443A card response should be in the following format:
-  
-    byte            Description
-    -------------   ------------------------------------------
-    b0..6           Frame header and preamble
-    b7              Tags Found
-    b8              Tag Number (only one used in this example)
-    b9..10          SENS_RES
-    b11             SEL_RES
-    b12             NFCID Length
-    b13..NFCIDLen   NFCID                                      */
-  
+  // from: nfc-smart-tag.googlecode.com/git-history/.../rcs956/rcs956_initiator.c
+  // Felica card should be in following format:
+  // RC-956 Normal Frame
+  // 0x00-0x04: RC-956 Envelope
+  //
+  // Felica InListPassiveTarget Response
+  // 0x05: 0xd5 Command Code
+  // 0x06: 0x4b Subcommand Code
+  // 0x07:      NbTg Number of targets
+  // 0x08: 0x01 Logical number of target
+  // 0x09: 0x12 Length of polling response (0x12 for "No Request")
+  //
+  // Sony Felica Card User's Manual
+  // 0x0a: 0x01 Response Code to Polling command
+  // 0x0b-0x12: IDm (Manufacture ID)
+  // 0x13-0x1a: PMm (Manufacture Parameter)
+
+
 #ifdef MIFAREDEBUG
     Serial.print("Found "); Serial.print(pn532_packetbuffer[7], DEC); Serial.println(" tags");
 #endif
-  if (pn532_packetbuffer[7] != 1) 
-    return 0;
-    
-  uint16_t sens_res = pn532_packetbuffer[9];
-  sens_res <<= 8;
-  sens_res |= pn532_packetbuffer[10];
+  *uidLength = 8; // pn532_packetbuffer[12];
 #ifdef MIFAREDEBUG
-    Serial.print("ATQA: 0x");  Serial.println(sens_res, HEX); 
-    Serial.print("SAK: 0x");  Serial.println(pn532_packetbuffer[11], HEX); 
+  for (uint8_t i = 0; i != 24; ++i)
+  {
+    Serial.print(i); Serial.print(":"); Serial.println(pn532_packetbuffer[i], HEX);
+  }
 #endif
-  
-  /* Card appears to be Mifare Classic */
-  *uidLength = pn532_packetbuffer[12];
+  if (pn532_packetbuffer[7] != 1) 
+  {
 #ifdef MIFAREDEBUG
+    Serial.println("Returning due to :");Serial.println(pn532_packetbuffer[7]);
+#endif
+    return 0;
+  }
+
+  /* We are expecting a length of 12 */
+  if (pn532_packetbuffer[9] != 0x12)
+  {
+#ifdef MIFAREDEBUG
+    Serial.println("Returning due to length:");Serial.println(pn532_packetbuffer[9]);
+#endif
+    return 0;
+  }
+    
+#ifdef MIFAREDEBUG
+    Serial.print("Length: "); Serial.println(pn532_packetbuffer[0x09], HEX);
     Serial.print("UID:"); 
 #endif
-  for (uint8_t i=0; i < pn532_packetbuffer[12]; i++) 
+  for (uint8_t i=0; i < 8; i++) 
   {
-    uid[i] = pn532_packetbuffer[13+i];
+    uid[i] = pn532_packetbuffer[0x0b+i];
 #ifdef MIFAREDEBUG
-      Serial.print(" 0x");Serial.print(uid[i], HEX); 
+    Serial.print(" 0x");Serial.print(uid[i], HEX); 
 #endif
   }
 #ifdef MIFAREDEBUG
