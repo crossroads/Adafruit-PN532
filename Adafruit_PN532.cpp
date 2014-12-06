@@ -435,7 +435,7 @@ boolean Adafruit_PN532::readPassiveTargetID(BaudRateType cardbaudrate, uint8_t *
   pn532_packetbuffer[4] = 0xFF;
   pn532_packetbuffer[5] = 0xFF;
   pn532_packetbuffer[6] = 0x0;
-  pn532_packetbuffer[7] = 0x0; // time slot
+  pn532_packetbuffer[7] = 0xFF; // time slot
   
   if (! sendCommandCheckAck(pn532_packetbuffer, 8))
     return 0x0;  // no cards read
